@@ -1,0 +1,6 @@
+# weighted RMS error: 0.42 dB
+# global gain: -2.100 dB  (linear 0.7842)
+highpass   Freq=   55.0 Q=0.700
+peaking    Freq=  100.0 Q=1.200 Gain=+3.00
+peaking    Freq=  3000.0 Q=1.500 Gain=-4.00
+highshelf  Freq=  8000.0 Q=0.700 Gain=+2.00

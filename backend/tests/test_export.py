@@ -13,6 +13,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from tunerlib import export as E  # noqa: E402
 from tunerlib import fit as F  # noqa: E402
 
+GOLDEN = os.path.join(os.path.dirname(__file__), "..", "fixtures", "golden",
+                      "filter-chain.expected.conf")
 UPSTREAM = os.path.join(os.path.expanduser("~"),
                         "Projects/omarchy-audio-tuner/generate/gen-filter-chain.py")
 
@@ -38,7 +40,41 @@ def _strip_diff(text):
 
 
 class TestGoldenPipeWire(unittest.TestCase):
-    def test_byte_comparable_to_upstream_gen_filter_chain(self):
+    """Golden guarantee: our exporter is byte-comparable (modulo comment
+    lines and the sink-name prefix) to upstream gen-filter-chain.py.
+
+    The expected output was generated from upstream
+    omarchy-audio-tuner/generate/gen-filter-chain.py with the fixture
+    backend/fixtures/golden/fit.txt (== FIXED_FIT below) and vendored at
+    backend/fixtures/golden/filter-chain.expected.conf, so the invariant is
+    enforced in CI, where the upstream checkout does not exist. Regenerate:
+    python3 <upstream>/generate/gen-filter-chain.py \\
+        backend/fixtures/golden/fit.txt \\
+        > backend/fixtures/golden/filter-chain.expected.conf
+    """
+
+    def _ours(self):
+        return E.pipewire_filter_chain(
+            *F.parse_fit_text(FIXED_FIT)[:2],
+            prefix="omarchy_speaker_tuning")
+
+    def _assert_golden(self, expected_text):
+        exp_lines = _strip_diff(expected_text)
+        our_lines = _strip_diff(self._ours())
+        self.assertEqual(len(exp_lines), len(our_lines),
+                         "line count mismatch (comments excluded)")
+        for i, (a, b) in enumerate(zip(exp_lines, our_lines)):
+            self.assertEqual(a, b, f"line {i} differs:\n  expected: {a!r}\n"
+                                   f"  ours:     {b!r}")
+        self.assertGreater(len(exp_lines), 40)
+
+    def test_byte_comparable_to_vendored_golden(self):
+        with open(GOLDEN) as fh:
+            self._assert_golden(fh.read())
+
+    @unittest.skipUnless(os.path.exists(UPSTREAM),
+                         "upstream omarchy-audio-tuner checkout not present")
+    def test_byte_comparable_to_live_upstream_when_available(self):
         with tempfile.TemporaryDirectory() as d:
             fit_path = os.path.join(d, "fit.txt")
             with open(fit_path, "w") as fh:
@@ -46,17 +82,7 @@ class TestGoldenPipeWire(unittest.TestCase):
             up = subprocess.run([sys.executable, UPSTREAM, fit_path],
                                 capture_output=True, text=True)
             self.assertEqual(up.returncode, 0, up.stderr)
-            ours = E.pipewire_filter_chain(
-                *F.parse_fit_text(FIXED_FIT)[:2],
-                prefix="omarchy_speaker_tuning")
-            up_lines = _strip_diff(up.stdout)
-            our_lines = _strip_diff(ours)
-            self.assertEqual(len(up_lines), len(our_lines),
-                             "line count mismatch (comments excluded)")
-            for i, (a, b) in enumerate(zip(up_lines, our_lines)):
-                self.assertEqual(a, b, f"line {i} differs:\n  upstream: {a!r}\n"
-                                       f"  ours:     {b!r}")
-            self.assertGreater(len(up_lines), 40)
+            self._assert_golden(up.stdout)
 
 
 class TestExporterInvariants(unittest.TestCase):
