@@ -1,0 +1,20 @@
+{
+  "name": "default",
+  "description": "Small laptop drivers (default prior, ported verbatim from omarchy-audio-tuner fit-eq.py LAYOUT, 13 sections)",
+  "sample_rate_hint": 48000,
+  "sections": [
+    {"kind": "highpass",  "freq": [40, 110],     "q": [0.4, 1.6], "gain_db": [0, 0]},
+    {"kind": "highpass",  "freq": [28, 80],      "q": [0.4, 1.6], "gain_db": [0, 0]},
+    {"kind": "peaking",   "freq": [60, 105],     "q": [0.8, 5.0], "gain_db": [-10, 4]},
+    {"kind": "peaking",   "freq": [100, 150],    "q": [0.8, 5.0], "gain_db": [-4, 8]},
+    {"kind": "peaking",   "freq": [170, 300],    "q": [0.5, 3.0], "gain_db": [-10, 4]},
+    {"kind": "peaking",   "freq": [300, 470],    "q": [0.5, 3.0], "gain_db": [-10, 4]},
+    {"kind": "peaking",   "freq": [480, 780],    "q": [0.5, 4.0], "gain_db": [-16, 2]},
+    {"kind": "peaking",   "freq": [800, 1120],   "q": [0.6, 4.0], "gain_db": [-8, 6]},
+    {"kind": "peaking",   "freq": [1150, 1500],  "q": [0.8, 5.0], "gain_db": [-4, 8]},
+    {"kind": "peaking",   "freq": [1550, 2250],  "q": [0.5, 4.0], "gain_db": [-14, 2]},
+    {"kind": "peaking",   "freq": [2300, 3100],  "q": [0.5, 4.0], "gain_db": [-12, 4]},
+    {"kind": "peaking",   "freq": [3200, 5000],  "q": [0.5, 3.0], "gain_db": [-8, 6]},
+    {"kind": "highshelf", "freq": [4000, 10000], "q": [0.4, 1.5], "gain_db": [-8, 10]}
+  ]
+}

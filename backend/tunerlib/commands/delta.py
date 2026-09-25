@@ -29,9 +29,21 @@ def run(args):
     progress(args, 50, "computing reference - raw")
     delta = analysis.delta(raw, reference)
     progress(args, 100, f"{len(delta)} frequencies")
-    return {"raw": os.path.abspath(args.raw),
-            "reference": os.path.abspath(args.reference),
-            "delta": delta, "n": len(delta)}
+    out_path = None
+    if getattr(args, "out", None):
+        out_path = os.path.abspath(args.out)
+        parent = os.path.dirname(out_path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        with open(out_path, "w") as fh:
+            for row in delta:
+                fh.write(f"{row['freq']} {row['db']:.2f}\n")
+    payload = {"raw": os.path.abspath(args.raw),
+               "reference": os.path.abspath(args.reference),
+               "delta": delta, "n": len(delta)}
+    if out_path:
+        payload["out"] = out_path
+    return payload
 
 
 def register(sub):
@@ -39,4 +51,7 @@ def register(sub):
                                      "per shared frequency")
     p.add_argument("raw", help="response file of the raw path")
     p.add_argument("reference", help="response file of the reference path")
+    p.add_argument("--out", default=None,
+                   help="also write the target curve as '<freq> <db>' text "
+                        "to this file (the format `fit` consumes)")
     p.set_defaults(func=run)

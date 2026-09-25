@@ -128,11 +128,14 @@ Also available in text form (`<freq> <dbfs>` lines) via
 `tunerlib.analysis.response_text(levels)`.
 
 ### `delta`
-`delta RAW.txt REFERENCE.txt` — both files are `analyse`-style response text
-(`<freq> <dbfs>` per line). Output = reference - raw per shared frequency.
+`delta RAW.txt REFERENCE.txt [--out FILE]` — both files are `analyse`-style
+response text (`<freq> <dbfs>` per line). Output = reference - raw per shared
+frequency. With `--out FILE`, also writes the target curve as `<freq> <db>`
+text (the format `fit` consumes) and returns its path under `"out"`.
 ```json
 {"raw": "/abs/raw.txt", "reference": "/abs/ref.txt",
- "delta": [{"freq": 40, "db": 2.14}, ...], "n": 104}
+ "delta": [{"freq": 40, "db": 2.14}, ...], "n": 104,
+ "out": "/abs/target.txt"|null}
 ```
 
 ### `tone`
@@ -166,6 +169,84 @@ Ported but NOT live-tested (needs mutable audio state).
 `ab-stop` (SA4). They register through the identical `register(sub)` /
 `run(args)` contract and appear as subcommands automatically.
 
+## Commands (SA2: fit / generate / tunings) — arguments, exact response shapes
+
+### `fit`
+`fit [--rate INT=48000] [--layout NAME=default] [--restarts INT=12]
+     [--out FILE] TARGET.txt`
+TARGET.txt is `<freq> <db>` per line (the output of `delta` is compatible).
+`--rate` is a parameter: pass the capture's actual rate, never rely on the
+default. `--layout` selects a profile from `tunerlib/layouts/*.json` by file
+stem (`default` = the upstream small-laptop-drivers prior, 13 sections,
+verbatim). `--out FILE` also writes the upstream `fit-eq.py` human format
+(what `generate` and `gen-filter-chain.py` both read).
+```json
+{"target": "/abs/target.txt", "rate": 48000, "layout": "default",
+ "restarts": 12, "n_points": 104,
+ "weighted_rms_error_db": 0.42, "magnitude_rms_db": 0.42,
+ "bass_group_delay_swing_ms": 15.9,
+ "global_gain_db": -2.1, "linear_gain": 0.7842,
+ "sections": [{"kind": "highpass", "freq": 55.0, "q": 0.7, "gain_db": 0.0},
+              {"kind": "peaking", "freq": 100.0, "q": 1.2, "gain_db": 3.0},
+              ...],
+ "fit_text": "# weighted RMS error: 0.42 dB\n# global gain: ...\npeaking    Freq=   100.0 Q=1.200 Gain=+3.00\n...",
+ "out": "/abs/fit.txt"|null}
+```
+`magnitude_rms_db` = the weighted RMS error; `bass_group_delay_swing_ms` =
+max-min group delay over 30-300 Hz from the biquad coefficients.
+Error codes: `no_response_file`, `bad_freq`, `no_layout`, `bad_layout`,
+`bad_rate`.
+
+### `generate`
+`generate [--target {pipewire,omarchy,easyeffects}=pipewire]
+          [--prefix STR=noctalia_audio_tuning] [--sink STR=@SPEAKER_SINK@]
+          [--out-dir DIR] [--out FILE] FIT`
+FIT is a path to an upstream `fit.txt` OR to a saved `fit` result payload
+(the JSON object above, or the whole `ok` envelope). `--sink` default keeps
+the `@SPEAKER_SINK@` placeholder (substituted at install time); `--prefix` is
+the filter-chain node name prefix.
+- `pipewire` (default): data =
+  `{"conf": "<filter-chain.conf text>", "prefix", "sink", "n_sections",
+    "linear_gain", "out": "/abs/file"|null}`. With `--out FILE` the conf is
+  written there too. Output is byte-comparable to upstream
+  `gen-filter-chain.py` modulo comment lines and the node-name prefix; N
+  biquads per channel wired explicitly, ending in LSP `limiter_stereo`
+  (`alr`=0, `boost`=0, `g_in`=linear gain, `th`=0.891).
+- `omarchy`: requires `--out-dir DIR`; writes `DIR/filter-chain.conf` +
+  `DIR/tuning.conf`; data =
+  `{"out_dir", "filter_chain_conf", "tuning_conf", "prefix", "sink",
+    "n_sections", "linear_gain", "magnitude_rms_db",
+    "bass_group_delay_swing_ms", "conf", "tuning_conf_text"}`.
+  Requires the JSON payload (a bare fit.txt has no `magnitude_rms_db` to
+  report; it refuses with `bad_fit` rather than fabricate). tuning.conf
+  carries the fit's two numbers and emits
+  `limiter_headroom_db = not_measured` /
+  `dynamic_range_delta_lu = not_measured` — those two are post-install
+  measurements, never written as numbers.
+- `easyeffects`: data =
+  `{"preset": {importable preset JSON}, "out", "n_sections",
+    "global_gain_db"}`. One `filter#i` LSP filter processor per section
+  (`kind`, `frequency`, `q-factor`, `gain` when present), global gain as
+  `output.input-gain`; with `--out FILE` the preset is written there.
+Error codes: `bad_fit` (unreadable/section-less fit input), `bad_target`,
+`no_out_dir`.
+
+### `tunings`
+`tunings` — no arguments, read-only. Scans `pipewire.conf.d` drop-ins
+(system + XDG user) and `$XDG_STATE_HOME/noctalia-audio-tuner/tunings` for
+filter-chain modules / tuning trees.
+```json
+{"searched": ["/abs/dir", ...],
+ "tunings": [{"path": "/abs/file.conf", "kind": "pipewire-filter-chain",
+              "prefix": "noctalia_audio_tuning", "target_sink": "...|null",
+              "report": {"magnitude_rms_db": 0.42,
+                         "bass_group_delay_swing_ms": 15.9,
+                         "limiter_headroom_db": "not_measured",
+                         "dynamic_range_delta_lu": "not_measured"}|null}]}
+```
+`report` parses the `tuning.conf` beside the conf when present; `not_measured`
+markers are passed through verbatim as the string `"not_measured"`.
+
 ## Fixtures & tests
 
 - `backend/fixtures/devices/` — simulated device profiles (pactl-shaped JSON)
@@ -175,3 +256,14 @@ Ported but NOT live-tested (needs mutable audio state).
   `tunerlib.multitone.make_mix`; tests verify analyse recovers them.
 - `backend/tests/` — stdlib `unittest` only (`python3 -m unittest discover
   -s backend/tests -t backend`, from `backend/`); no pytest, no third-party deps.
+
+## Fixtures & tests (SA2 additions)
+
+- `backend/tests/test_fit.py` — synthetic-target convergence (<= 1 dB
+  weighted RMS from known biquads), rate-as-parameter, payload/text shapes,
+  fit.txt round-trip through the generator parser.
+- `backend/tests/test_export.py` — golden byte-diff of the pipewire exporter
+  against upstream `gen-filter-chain.py` (comments + sink name excluded),
+  limiter invariants (last, `alr`=0, `boost`=0), omarchy `not_measured`
+  markers, EasyEffects preset shape, and the SA2 commands end-to-end through
+  the real entrypoint (JSON envelopes, error envelope).
