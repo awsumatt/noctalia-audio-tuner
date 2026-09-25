@@ -1,0 +1,40 @@
+{
+  "id": "simulated-laptop-speakers",
+  "description": "Simulated 2ch/48kHz internal laptop speaker sink (pactl-shaped)",
+  "pactl_sink": {
+    "index": 41,
+    "name": "alsa_output.pci-0000_00_1f.3.analog-stereo",
+    "description": "Built-in Audio Analog Stereo",
+    "sample_specification": "float32le 2ch 48000Hz",
+    "monitor_source": "alsa_output.pci-0000_00_1f.3.analog-stereo.monitor",
+    "properties": {
+      "api.alsa.pcm.card": "0",
+      "api.alsa.pcm.id": "HW:0,0",
+      "device.name": "alsa_output.pci-0000_00_1f.3.analog-stereo",
+      "device.description": "Built-in Audio Analog Stereo"
+    },
+    "ports": [
+      {
+        "name": "analog-output-speaker",
+        "type": "Speaker",
+        "description": "Speakers",
+        "availability": "yes"
+      },
+      {
+        "name": "analog-output-headphones",
+        "type": "Headphones",
+        "description": "Headphones",
+        "availability": "no"
+      }
+    ]
+  },
+  "pactl_source": {
+    "index": 42,
+    "name": "alsa_output.pci-0000_00_1f.3.analog-stereo.monitor",
+    "description": "Monitor of Built-in Audio Analog Stereo",
+    "monitor_of_sink": "alsa_output.pci-0000_00_1f.3.analog-stereo",
+    "properties": {
+      "device.class": "monitor"
+    }
+  }
+}

@@ -1,0 +1,63 @@
+#!/usr/bin/env python3
+"""noctalia-audio-tuner — headless JSON-protocol CLI for the Noctalia audio tuner.
+
+Protocol (see tunerlib/README.md):
+  stdout: exactly one JSON envelope
+      {"status":"ok","data":{...},"error":null}
+      {"status":"error","data":null,"error":{"code":"...","message":"..."}}
+  With --progress, long-running commands instead stream NDJSON lines
+      {"event":"progress","pct":0-100,"msg":"..."}
+  and end with {"event":"done","data":{...}}.
+  Human-readable text ALWAYS goes to stderr, never stdout.
+"""
+import argparse
+import importlib
+import json
+import os
+import pkgutil
+import sys
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+
+from tunerlib import TunerError, error_envelope, ok_envelope  # noqa: E402
+
+
+def build_parser():
+    import tunerlib.commands as commands
+    parser = argparse.ArgumentParser(
+        prog="noctalia-audio-tuner",
+        description="Headless audio-tuner backend. JSON envelope on stdout; "
+                    "human text on stderr.")
+    parser.add_argument("--progress", action="store_true",
+                        help="long-running commands stream NDJSON progress "
+                             "lines, then a final done event (instead of the "
+                             "single envelope)")
+    sub = parser.add_subparsers(dest="command", required=True)
+    # Registry rule: every module in tunerlib/commands/*.py is a command.
+    # The command name is the module name with '_' replaced by '-'.
+    for _, name, _ in pkgutil.iter_modules(commands.__path__):
+        mod = importlib.import_module(f"tunerlib.commands.{name}")
+        mod.register(sub)
+    return parser
+
+
+def main(argv=None):
+    args = build_parser().parse_args(argv)
+    try:
+        payload = args.func(args)
+    except TunerError as e:
+        envelope = error_envelope(e)
+        print(json.dumps(envelope))
+        print(f"error[{e.code}]: {e.message}", file=sys.stderr)
+        return 1
+    if getattr(args, "progress", False):
+        print(json.dumps({"event": "done", "data": payload}), flush=True)
+    else:
+        print(json.dumps(ok_envelope(payload)))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
