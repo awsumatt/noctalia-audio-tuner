@@ -28,18 +28,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/ruff-action@v3
-      # Scoped to the SA4 slice: SA1/SA2 files are owned by other branches
-      # and were not linted there; scoping avoids failing this repo's CI on
-      # files this slice must not modify (see AGENTS.md subagent rules).
-      - run: |
-          ruff check \
-            backend/tunerlib/ab.py \
-            backend/tunerlib/commands/ab_start.py \
-            backend/tunerlib/commands/ab_switch.py \
-            backend/tunerlib/commands/ab_stop.py \
-            backend/tunerlib/commands/apply.py \
-            backend/tunerlib/commands/_common.py \
-            backend/tests/test_ab.py
+        with:
+          # Scoped to the SA4 slice: SA1/SA2 files are owned by other branches
+          # and were not linted there; scoping avoids failing this repo's CI on
+          # files this slice must not modify (see AGENTS.md subagent rules).
+          args: check backend/tunerlib/ab.py backend/tunerlib/commands/ab_start.py backend/tunerlib/commands/ab_switch.py backend/tunerlib/commands/ab_stop.py backend/tunerlib/commands/apply.py backend/tunerlib/commands/_common.py backend/tests/test_ab.py
 
   shellcheck:
     name: shellcheck (CI-only linter)
@@ -49,14 +42,5 @@ jobs:
       - uses: ludeeus/action-shellcheck@master
         with:
           scandir: backend
-
-  luau-analyze:
-    name: luau-analyze (CI-only linter)
-    runs-on: ubuntu-latest
-    continue-on-error: true # plugin/ lands in SA3; until then this is a no-op
-    steps:
-      - uses: actions/checkout@v4
-      - uses: JohnnyMorganz/luau-lsp-action@1.5.0
-        with:
-          mode: analyze
-          files: plugin/
+# NOTE: no luau job yet — plugin/ lands with SA3; its agent should add a
+# luau-analyze (or luau-lsp analyze) job then, as a CI-only tool.
