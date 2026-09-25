@@ -122,7 +122,7 @@ local function tuningsSection()
     rows[1] = ui.label({ text = noctalia.tr("panel.no_tunings"), color = "on_surface_variant" })
   else
     for i, t in ipairs(ui.tunings) do
-      local id = type(t) == "table" and (t.id or t.name) or t
+      local id = type(t) == "table" and (t.prefix or t.path) or t
       rows[i] = ui.row({ key = "tuning-" .. tostring(i), gap = 8, align = "center" }, {
         ui.label({ text = id, flexGrow = 1, maxWidth = 300 }),
         ui.button({

@@ -50,6 +50,16 @@ local SOFT_COMMANDS = {
 local backendBin = nil
 local sinkPrefix = "noctalia_audio_tuning"
 local busy = false
+local busyScope = nil
+local watchdogTick = 0 -- advanced in update() (one tick per update cadence)
+local lastStreamTick = nil -- tick of the last stream line; nil = not streaming
+local streamDead = false -- watchdog fired; late lines from the dead stream ignored
+-- runStream has no completion callback at API 9: a child that dies without a
+-- done event or an error envelope would leave busy set forever. update()'s
+-- watchdog recovers after STREAM_WATCHDOG_TICKS updates with no line at all
+-- (~5 min at the 30 s cadence; every stream line resets the counter).
+local STREAM_WATCHDOG_TICKS = 10
+local devices = nil
 local activeTuning = nil
 local lastTuning = nil
 local tunings = {}
@@ -79,6 +89,8 @@ end
 local function fail(scope, msg)
   log("error (" .. scope .. "): " .. msg)
   busy = false
+  busyScope = nil
+  lastStreamTick = nil
   publish("busy", false)
   publish("progress", nil)
   publish("last_error", scope .. ": " .. msg)
@@ -202,10 +214,17 @@ local function runBackendStream(args, onDone, scope, soft)
   end
   local cmd = buildCmd(bin, args, true)
   busy = true
+  busyScope = scope
+  lastStreamTick = watchdogTick
+  streamDead = false
   publish("busy", true)
   publish("last_error", nil)
   log("stream: " .. cmd)
   local ok = noctalia.runStream(cmd, function(line)
+    if streamDead then
+      return -- late line from a stream the watchdog already declared dead
+    end
+    lastStreamTick = watchdogTick
     local obj = noctalia.json.decode(line)
     if obj == nil then
       log("non-JSON progress line ignored: " .. line:sub(1, 120))
@@ -215,24 +234,33 @@ local function runBackendStream(args, onDone, scope, soft)
       publish("progress", { step = scope, pct = obj.pct or 0, msg = obj.msg or "" })
     elseif obj.event == "done" then
       busy = false
+      busyScope = nil
+      lastStreamTick = nil
       publish("busy", false)
       publish("progress", nil)
       onDone(obj.data, nil)
     elseif obj.status == "error" then
       -- progress-mode error: single envelope, no done event
       busy = false
+      busyScope = nil
+      lastStreamTick = nil
       publish("busy", false)
       publish("progress", nil)
       local msg = (obj.error and obj.error.message) or "backend error envelope"
       if soft then
-        unavailable(scope, cmd)
-        onDone(nil, nil)
+        -- A MISSING command produces silence (argparse usage on stderr, no
+        -- stdout), so an error envelope in soft mode is always a real
+        -- runtime failure of a live command (e.g. "no active A/B session").
+        -- Hand it to the caller; genuinely absent commands hit the watchdog.
+        onDone(nil, msg)
         return
       end
       fail(scope, msg)
     elseif obj.status == "ok" then
       -- non-progress envelope (backend without --progress support): treat as done
       busy = false
+      busyScope = nil
+      lastStreamTick = nil
       publish("busy", false)
       publish("progress", nil)
       onDone(obj.data, nil)
@@ -242,6 +270,8 @@ local function runBackendStream(args, onDone, scope, soft)
   end)
   if not ok then
     busy = false
+    busyScope = nil
+    lastStreamTick = nil
     publish("busy", false)
     fail(scope, "runStream refused to start command")
   end
@@ -252,6 +282,7 @@ end
 local function refreshDevices()
   runBackend({ "devices" }, function(data)
     if data ~= nil then
+      devices = data
       publish("devices", data)
     end
   end, "devices")
@@ -278,17 +309,33 @@ end
 
 -- ── apply / toggle / cycle (SA4 shapes; graceful when absent) ───────────────
 
--- isConfig: true when the id is actually a generated filter-chain path (the
--- wizard apply path uses `apply --config`).
-local function applyTuning(id, dryRun, onFinished, isConfig)
-  local args
-  if isConfig then
-    args = { "apply", "--config", id, "--sink-prefix", sinkPrefix }
-  else
-    args = { "apply", "--tuning", id, "--sink-prefix", sinkPrefix }
+-- Reconciled to the landed SA4 contracts: `apply CONFIG [--sink S] [--name N]
+-- [--write]` — dry-run IS the default (there is no --dry-run flag); installing
+-- does NOT reload PipeWire and does NOT switch sinks by itself. Switching the
+-- active sink happens through the A/B session (`ab-start --prefix P`,
+-- `ab-switch [N | --name S]`, `ab-stop [--keep]`), which owns landing
+-- verification and full restore.
+
+local function tuningSinkName(t)
+  if type(t) == "table" then
+    return t.prefix or t.path
   end
-  if dryRun then
-    table.insert(args, "--dry-run")
+  return t
+end
+
+-- Install a generated conf (wizard output). realInstall=false -> backend
+-- default dry-run (no --write); the confirmed panel step re-calls with
+-- realInstall=true -> --write + --sink for @SPEAKER_SINK@ substitution.
+local function installConfig(confPath, realInstall)
+  local sink = (session and session.sink)
+    or (devices and devices.speaker_sink)
+  if sink == nil then
+    fail("apply", "no target sink known — run the wizard or pick a sink")
+    return
+  end
+  local args = { "apply", confPath, "--sink", sink, "--name", sinkPrefix }
+  if realInstall then
+    table.insert(args, "--write")
   end
   runBackendStream(args, function(data, err)
     if err then
@@ -298,69 +345,131 @@ local function applyTuning(id, dryRun, onFinished, isConfig)
     if data == nil then
       return -- reported unavailable
     end
-    if not dryRun then
-      activeTuning = id
-      lastTuning = id
-      publish("active_tuning", id)
-      publish("last_applied", { id = id, at = os.time() })
+    if realInstall then
+      activeTuning = confPath
+      lastTuning = confPath
+      publish("active_tuning", confPath)
+      publish("last_applied", { id = confPath, at = os.time() })
     end
-    publish("apply_result", { id = id, dry_run = dryRun, data = data })
-    notify(dryRun and "notify.dry_run_ok" or "notify.applied", { tuning = id })
-    if onFinished then
-      onFinished(data)
-    end
+    publish("apply_result", { id = confPath, dry_run = not realInstall, data = data })
+    notify(realInstall and "notify.applied" or "notify.dry_run_ok",
+           { tuning = confPath })
   end, "apply", true)
+end
+
+-- Activate an installed tuning sink through the A/B session: ab-switch first
+-- (works when a session is already active), else ab-start then ab-switch.
+local function activateTuning(sinkName)
+  runBackendStream({ "ab-switch", "--name", sinkName }, function(swData, err)
+    if err then
+      if tostring(err):find("session", 1, true) == nil then
+        fail("ab-switch", err)
+        return
+      end
+      -- No session yet: start one (the backend auto-detects the raw sink when
+      -- unambiguous), then switch to the requested tuning sink.
+      runBackendStream({ "ab-start", "--prefix", sinkPrefix },
+        function(_, err2)
+          if err2 then
+            fail("ab-start", err2)
+            return
+          end
+          runBackendStream({ "ab-switch", "--name", sinkName },
+            function(sw2, err3)
+              if err3 then
+                fail("ab-switch", err3)
+                return
+              end
+              if sw2 == nil then
+                return -- reported unavailable
+              end
+              activeTuning = sinkName
+              lastTuning = sinkName
+              publish("active_tuning", sinkName)
+              publish("last_applied", { id = sinkName, at = os.time() })
+              publish("ab_state", { active = true, data = sw2 })
+              notify("notify.applied", { tuning = sinkName })
+            end, "ab-switch", true)
+        end, "ab-start", true)
+      return
+    end
+    if swData == nil then
+      return -- reported unavailable
+    end
+    activeTuning = sinkName
+    lastTuning = sinkName
+    publish("active_tuning", sinkName)
+    publish("last_applied", { id = sinkName, at = os.time() })
+    publish("ab_state", { active = true, data = swData })
+    notify("notify.applied", { tuning = sinkName })
+  end, "ab-switch", true)
 end
 
 local function toggleTuning()
   if activeTuning ~= nil then
-    -- Bypass: stop the A/B chain, remember the tuning for re-apply.
-    runBackendStream({ "ab-stop", "--sink-prefix", sinkPrefix }, function(data, err)
+    -- Bypass: end the A/B session (full restore), remember the tuning.
+    runBackendStream({ "ab-stop" }, function(data, err)
       if err then
         fail("ab-stop", err)
         return
       end
+      if data == nil then
+        return
+      end
       activeTuning = nil
       publish("active_tuning", nil)
+      publish("ab_state", { active = false, data = data })
       publish("apply_result", { id = lastTuning, bypassed = true, data = data })
     end, "ab-stop", true)
   elseif lastTuning ~= nil then
-    applyTuning(lastTuning, false, nil, false)
+    activateTuning(lastTuning)
   else
     fail("toggle", noctalia.tr("error.no_tuning"))
   end
 end
 
+-- Step to the next A/B candidate. `dir` is accepted for IPC compatibility;
+-- ab-switch without arguments advances to the next candidate.
 local function cycleTuning(dir)
-  if #tunings == 0 then
-    refreshTunings()
+  if activeTuning == nil then
+    if #tunings == 0 then
+      refreshTunings()
+      return
+    end
+    activateTuning(tuningSinkName(tunings[1]))
     return
   end
-  local idx = 1
-  for i, t in ipairs(tunings) do
-    local id = type(t) == "table" and (t.id or t.name) or t
-    if id == activeTuning then
-      idx = i
-      break
+  runBackendStream({ "ab-switch" }, function(data, err)
+    if err then
+      fail("ab-switch", err)
+      return
     end
-  end
-  idx = ((idx - 1 + dir) % #tunings) + 1
-  local t = tunings[idx]
-  applyTuning(type(t) == "table" and (t.id or t.name) or t, false, nil, false)
+    if data == nil then
+      return
+    end
+    activeTuning = data.selected
+    publish("active_tuning", activeTuning)
+    publish("ab_state", { active = true, data = data })
+  end, "ab-switch", true)
 end
 
 -- ── measurement wizard ──────────────────────────────────────────────────────
 -- probe → capture (reference) → analyse --out ref.txt
 --   [user changes configuration — e.g. applies a candidate tuning]
 -- → capture (candidate) → analyse --out raw.txt
--- → delta raw.txt ref.txt → fit → generate
---   [panel offers apply --dry-run, then the confirmed apply]
+-- → delta raw.txt ref.txt --out target.txt
+-- → fit target.txt --rate <capture rate> --out fit.txt
+-- → generate fit.txt --prefix <prefix> --out filter-chain.conf
+--   [panel offers the backend-default dry-run apply, then the confirmed
+--    apply --write --sink <sink>]
 --
--- Per the contract: analyse writes the response as <freq> <dbfs> text with
--- --out FILE (returning its absolute path under "out"); delta takes
--- RAW.txt REFERENCE.txt positionally. fit/generate are SA2 commands: called by
--- documented name with best-effort shapes (upstream fit consumes the raw
--- response text + reference), and degrade to "not yet available".
+-- Per the contracts: analyse writes the response as <freq> <dbfs> text and
+-- delta writes the target as <freq> <db> text, both via --out FILE (absolute
+-- path under "out"). SA2's `fit` takes exactly ONE positional TARGET.txt (the
+-- delta output) — never two files — and `generate` takes a positional FIT with
+-- --prefix; the @SPEAKER_SINK@ placeholder is substituted at apply time.
+-- Absent sibling commands surface via the watchdog after ~5 min of stream
+-- silence (a missing command writes only usage to stderr, never an envelope).
 
 local function sessionDir()
   local dir, err = noctalia.pluginDataDir()
@@ -445,40 +554,49 @@ local function wizardPhaseTwo()
       end
       s.raw_txt = ana.out or (s.dir .. "/raw.txt")
       wizardPublish("measuring", { step = "delta" })
-      runBackend({ "delta", s.raw_txt, s.ref_txt }, function(deltaData)
+      runBackend({ "delta", s.raw_txt, s.ref_txt,
+                   "--out", s.dir .. "/target.txt" }, function(deltaData)
         if deltaData == nil then
           wizardPublish("failed", { step = "delta" })
           return
         end
         s.delta = deltaData
+        s.target_txt = deltaData.out or (s.dir .. "/target.txt")
         wizardPublish("measuring", { step = "fit" })
-        runBackendStream({ "fit", s.raw_txt, s.ref_txt }, function(fitData, err)
+        -- SA2's `fit` takes exactly ONE positional TARGET.txt (the delta
+        -- output materialized above) and the capture's actual rate — never
+        -- two files, never a hardcoded 48000.
+        local rate = s.probe and s.probe.rate
+        local fitArgs = { "fit", s.target_txt, "--out", s.dir .. "/fit.txt" }
+        if rate ~= nil then
+          table.insert(fitArgs, "--rate")
+          table.insert(fitArgs, tostring(rate))
+        end
+        runBackendStream(fitArgs, function(fitData, err)
           if err then
             wizardPublish("failed", { step = "fit" })
             return
           end
           if fitData == nil then
-            wizardPublish("unavailable", { step = "fit" })
-            return
+            return -- reported unavailable
           end
           s.fit = fitData
-          local fitPath = fitData.fit or fitData.out or fitData.path
+          local fitPath = fitData.out or fitData.fit or fitData.path
           if fitPath == nil then
             wizardPublish("failed", { step = "generate", msg = "fit returned no fit path" })
             return
           end
           wizardPublish("measuring", { step = "generate" })
           runBackendStream({
-            "generate", "--fit", fitPath, "--sink", s.sink,
-            "--sink-prefix", sinkPrefix, "--out", s.dir .. "/filter-chain.conf",
+            "generate", fitPath, "--prefix", sinkPrefix,
+            "--out", s.dir .. "/filter-chain.conf",
           }, function(genData, err)
             if err then
               wizardPublish("failed", { step = "generate" })
               return
             end
             if genData == nil then
-              wizardPublish("unavailable", { step = "generate" })
-              return
+              return -- reported unavailable
             end
             local conf = genData.out
               or (genData.filter_chain and genData.filter_chain.path)
@@ -525,8 +643,14 @@ local function handle(action, req)
       fail("apply", noctalia.tr("error.no_tuning"))
       return
     end
-    local isConfig = req.id == nil
-    applyTuning(req.id or req.config, req.dry_run == true, nil, isConfig)
+    if req.config ~= nil then
+      -- Generated conf: the backend's dry-run is the default; the confirmed
+      -- panel step re-calls with dry_run=false -> --write + --sink.
+      installConfig(req.config, req.dry_run ~= true)
+    else
+      -- Installed tuning: activate through the A/B session.
+      activateTuning(tuningSinkName(req.id))
+    end
   elseif action == "ab" then
     local op = (req and req.op) or "switch"
     if op == "start" then
@@ -535,18 +659,19 @@ local function handle(action, req)
         fail("ab-start", noctalia.tr("error.no_sink"))
         return
       end
-      runBackendStream({ "ab-start", "--sink", sink, "--sink-prefix", sinkPrefix }, function(data, err)
-        if err or data == nil then
-          if not err then
+      runBackendStream({ "ab-start", "--prefix", sinkPrefix, "--sink", sink },
+        function(data, err)
+          if err or data == nil then
+            if not err then
+              return
+            end
+            fail("ab-start", err)
             return
           end
-          fail("ab-start", err)
-          return
-        end
-        publish("ab_state", { active = true, sink = sink, data = data })
-      end, "ab-start", true)
+          publish("ab_state", { active = true, sink = sink, data = data })
+        end, "ab-start", true)
     elseif op == "stop" then
-      runBackendStream({ "ab-stop", "--sink-prefix", sinkPrefix }, function(data, err)
+      runBackendStream({ "ab-stop" }, function(data, err)
         if err or data == nil then
           if not err then
             return
@@ -554,10 +679,11 @@ local function handle(action, req)
           fail("ab-stop", err)
           return
         end
+        activeTuning = nil
         publish("ab_state", { active = false, data = data })
       end, "ab-stop", true)
     else
-      runBackendStream({ "ab-switch", "--sink-prefix", sinkPrefix }, function(data, err)
+      runBackendStream({ "ab-switch" }, function(data, err)
         if err or data == nil then
           if not err then
             return
@@ -565,6 +691,7 @@ local function handle(action, req)
           fail("ab-switch", err)
           return
         end
+        activeTuning = data.selected
         publish("ab_state", { active = true, data = data })
       end, "ab-switch", true)
     end
@@ -639,6 +766,18 @@ end
 
 noctalia.setUpdateInterval(POLL_MS)
 function update()
+  -- Watchdog: runStream has no completion callback at API 9. A child that
+  -- dies without a done event or an error envelope (killed mid-run, or a
+  -- missing command writing only to stderr) would leave busy set forever.
+  -- Runs BEFORE the busy-skip below so it is never starved.
+  watchdogTick = watchdogTick + 1
+  if busy and lastStreamTick ~= nil
+      and (watchdogTick - lastStreamTick) > STREAM_WATCHDOG_TICKS then
+    streamDead = true
+    lastStreamTick = nil
+    fail(busyScope or "stream", "stream produced no output for "
+        .. (STREAM_WATCHDOG_TICKS * 30) .. "s (watchdog)")
+  end
   -- Idle cadence: keep the device list fresh; skip while a command runs.
   if not busy then
     refreshDevices()
