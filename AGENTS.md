@@ -36,7 +36,7 @@ Found in upstream and banned here, or generalized:
 | `omarchy_speaker_tuning` / `omarchy_tuning_*` sink names | switch/compare/gen-filter-chain | Prefix configurable via setting; default `noctalia_audio_tuning` |
 | `@SPEAKER_SINK@` placeholder | `gen-filter-chain.py:131` | Keep the placeholder mechanism; substitute the detected sink at install time |
 | `FS = 48000` hardcoded | `multitone.py`, `analyse-dense.py`, `fit-eq.py`, `mic-sweep.sh` | Sample rate is a parameter: detect from the sink's actual rate (`pw-dump`/`pactl`), integer-Hz + bin-aligned DFT requirement is preserved at any rate |
-| XPS 14-tuned `LAYOUT` prior (14 sections) | `fit-eq.py:54` | Keep as the default "small laptop drivers" profile; make layout profiles data (JSON/TOML), selectable per tuning |
+| XPS 14-tuned `LAYOUT` prior (13 sections — "14" was a misread of the XPS **14** model name; verified by parsing the upstream source, and `layouts/default.json` matches all 13 sections verbatim) | `fit-eq.py:54` | Keep as the default "small laptop drivers" profile; make layout profiles data (JSON/TOML), selectable per tuning |
 | Cache/state paths `~/.cache/omarchy-audio-tuner`, `~/.local/state/omarchy-audio-tuning` | measure/compare | Move under `noctalia-audio-tuner` names (XDG-respecting); per-tuning artifacts under `noctalia.pluginDataDir()` on the plugin side |
 | EasyEffects systemd unit + `easyeffects_sink` interplay | switch/compare | Detect EasyEffects; if absent, skip that code path entirely. Unit name/service discovery is best-effort |
 | `-6 dBFS` probe peak, `-14 LUFS` target, 65536 volume scale | measure/switch | Keep values as documented defaults, expose as flags/settings, never hardcode silently |
@@ -130,3 +130,18 @@ docs/                  SA4 (UPSTREAM.md mapping, install guide)
 - `dc-ja` knowledge package license unknown → vendored under `references/v5-plugin-knowledge/` as a working copy for development only; if redistribution is wanted, re-check its license first.
 - Plugin cannot be auto-enabled headlessly; the user enables it once (Settings → Plugins) — never script around this.
 - Measurement requires hardware the CI does not have: CI is lint + simulated-fixture tests only.
+
+## Implementation status (2026-09-25 — port complete)
+
+All four slices merged to `main` (PRs #1 SA1, #4 SA2, #2 SA4, #3 SA3) plus owner
+follow-ups: `delta --out` (86a0169), SA3 contract reconciliation (89ea2a8),
+vendored golden fixture (3840f18).
+
+- Backend: 15 registered commands; 71/71 stdlib unittest green locally; CI green on `main`.
+- Exporter golden diff vs upstream `gen-filter-chain.py` byte-identical modulo
+  comments/sink prefix — enforced in CI via `backend/fixtures/golden/`.
+- Plugin: v5 Luau + `plugin.toml`, `plugin_api = 9`; every `noctalia.*` call
+  verified base-level against `references/noctalia.d.luau`.
+- Limitations: no GUI or live-audio validation (capture/ab-*/apply are
+  mocked-fixture-tested only); `apply` does not reload PipeWire; this machine
+  reports `speaker_sink: null`; plugin must be enabled once via Settings → Plugins.
