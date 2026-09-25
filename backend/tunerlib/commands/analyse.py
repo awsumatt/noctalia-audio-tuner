@@ -28,8 +28,20 @@ def run(args):
         progress_cb=lambda i, n: progress(args, 10 + 85 * i // max(n, 1),
                                           f"analysed {i}/{n} tones"))
     progress(args, 100, f"{len(levels)} tones analysed")
-    return {"wav": wav, "rate": analysis.read_mono(wav)[1], "start": args.start,
-            "freqs_path": os.path.abspath(freqs_path), "levels": levels}
+    out_path = None
+    if getattr(args, "out", None):
+        out_path = os.path.abspath(args.out)
+        parent = os.path.dirname(out_path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        with open(out_path, "w") as fh:
+            fh.write(analysis.response_text(levels) + "\n")
+    payload = {"wav": wav, "rate": analysis.read_mono(wav)[1],
+               "start": args.start,
+               "freqs_path": os.path.abspath(freqs_path), "levels": levels}
+    if out_path:
+        payload["out"] = out_path
+    return payload
 
 
 def register(sub):
@@ -39,4 +51,7 @@ def register(sub):
                    help="tone list file (default: cache dense-freqs.txt)")
     p.add_argument("--start", type=float, default=0.3,
                    help="analysis window start in seconds (default 0.3)")
+    p.add_argument("--out", default=None,
+                   help="also write the response as delta-compatible "
+                        "'<freq> <dbfs>' text to this file")
     p.set_defaults(func=run)

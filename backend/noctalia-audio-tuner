@@ -37,8 +37,14 @@ def build_parser():
     sub = parser.add_subparsers(dest="command", required=True)
     # Registry rule: every module in tunerlib/commands/*.py is a command.
     # The command name is the module name with '_' replaced by '-'.
+    # Private helpers (_common.py) and modules without register() are skipped,
+    # so sibling agents can drop shared helpers into the package safely.
     for _, name, _ in pkgutil.iter_modules(commands.__path__):
+        if name.startswith("_"):
+            continue
         mod = importlib.import_module(f"tunerlib.commands.{name}")
+        if not hasattr(mod, "register"):
+            continue
         mod.register(sub)
     return parser
 

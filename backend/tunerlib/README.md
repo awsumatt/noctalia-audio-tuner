@@ -20,6 +20,8 @@ Fit/export and A/B commands live in the same registry on their own branches.
 The entrypoint globs the package: every module in `backend/tunerlib/commands/`
 is imported via `pkgutil.iter_modules(tunerlib.commands.__path__)` and
 registered as a subcommand whose name is the module name with `_` -> `-`.
+Modules whose name starts with `_` are skipped (private helpers such as
+`_common.py`), as are modules without a `register` function.
 Each module must expose:
 
 - `register(sub)` — receive the argparse subparser, add arguments, then
@@ -111,9 +113,12 @@ mpv sink-input landed on SINK's id before recording; raises
 Ported but NOT live-tested (needs mutable audio state).
 
 ### `analyse`
-`analyse [--freqs FILE] [--start FLOAT=0.3] WAV` — one-second window of the
-wav's own rate, starting `--start` seconds in (falls back to the wav head if
-too short). `--freqs` default: cache `dense-freqs.txt`.
+`analyse [--freqs FILE] [--start FLOAT=0.3] [--out FILE] WAV` — one-second
+window of the wav's own rate, starting `--start` seconds in (falls back to the
+wav head if too short). `--freqs` default: cache `dense-freqs.txt`. With
+`--out FILE`, also writes the response in upstream text form
+(`<freq> <dbfs>` per line — exactly what `delta` reads) and returns its
+absolute path under `"out"`.
 ```json
 {"wav": "/abs/capture.wav", "rate": 48000, "start": 0.3,
  "freqs_path": "/abs/dense-freqs.txt",
