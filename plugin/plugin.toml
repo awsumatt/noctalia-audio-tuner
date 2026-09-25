@@ -1,0 +1,66 @@
+# Noctalia Audio Tuner — Noctalia Shell v5 plugin shell.
+# Measures laptop speakers on PipeWire, fits EQ, and A/B-compares tunings
+# through a headless Python backend (JSON stdout protocol, see AGENTS.md).
+
+id = "awsumatt/noctalia-audio-tuner"
+name = "Noctalia Audio Tuner"
+version = "0.1.0"
+plugin_api = 9
+author = "awsumatt"
+license = "MIT"
+dependencies = ["python", "ffmpeg", "mpv"]
+tags = ["audio", "pipewire", "equalizer", "measurement", "speaker-tuning"]
+icon = "music"
+description = "Measure → fit → generate → A/B toolkit for laptop speaker tunings on PipeWire."
+
+# ── Plugin-level settings (seeded into every entry) ─────────────────────────
+
+[[setting]]
+key = "backend_path"
+type = "string"
+label_key = "settings.backend_path.label"
+description_key = "settings.backend_path.description"
+default = "~/.local/bin/noctalia-audio-tuner"
+
+[[setting]]
+key = "sink_prefix"
+type = "string"
+label_key = "settings.sink_prefix.label"
+description_key = "settings.sink_prefix.description"
+default = "noctalia_audio_tuning"
+
+# ── Entries ─────────────────────────────────────────────────────────────────
+
+# Headless orchestrator: runs backend commands, publishes shared state.
+[[service]]
+id = "core"
+entry = "core.luau"
+
+# Bar widget: glyph + status text, click = toggle/bypass, scroll = cycle.
+[[widget]]
+id = "audio"
+entry = "audio.luau"
+
+# Main surface: device picker, tunings, A/B, measurement wizard.
+[[panel]]
+id = "tuner"
+entry = "tuner.luau"
+width = 520
+height = 640
+placement = "floating"
+position = "center"
+
+# Launcher provider: "/tune <query>" lists devices + tunings. Queries spawn
+# subprocesses, so debounce.
+[[launcher_provider]]
+id = "tune"
+entry = "tune.luau"
+prefix = "tune"
+glyph = "music"
+include_in_global_search = false
+debounce_ms = 250
+
+# Control-center quick-toggle tile.
+[[shortcut]]
+id = "toggle"
+entry = "shortcut.luau"
