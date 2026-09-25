@@ -128,11 +128,14 @@ Also available in text form (`<freq> <dbfs>` lines) via
 `tunerlib.analysis.response_text(levels)`.
 
 ### `delta`
-`delta RAW.txt REFERENCE.txt` — both files are `analyse`-style response text
-(`<freq> <dbfs>` per line). Output = reference - raw per shared frequency.
+`delta RAW.txt REFERENCE.txt [--out FILE]` — both files are `analyse`-style
+response text (`<freq> <dbfs>` per line). Output = reference - raw per shared
+frequency. With `--out FILE`, also writes the target curve as `<freq> <db>`
+text (the format `fit` consumes) and returns its path under `"out"`.
 ```json
 {"raw": "/abs/raw.txt", "reference": "/abs/ref.txt",
- "delta": [{"freq": 40, "db": 2.14}, ...], "n": 104}
+ "delta": [{"freq": 40, "db": 2.14}, ...], "n": 104,
+ "out": "/abs/target.txt"|null}
 ```
 
 ### `tone`

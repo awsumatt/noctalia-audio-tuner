@@ -70,6 +70,26 @@ class TestAnalyseOutInterop(unittest.TestCase):
             self.assertAlmostEqual(by_freq[1000], 0.0, delta=0.2)
             self.assertAlmostEqual(by_freq[2000], 3.0, delta=0.3)
 
+    def test_delta_out_writes_fit_compatible_target(self):
+        with tempfile.TemporaryDirectory() as td:
+            raw = os.path.join(td, "raw.txt")
+            ref = os.path.join(td, "ref.txt")
+            with open(raw, "w") as fh:
+                fh.write("1000 -12.0\n2000 -12.0\n")
+            with open(ref, "w") as fh:
+                fh.write("1000 -12.0\n2000 -9.0\n")
+            d = delta_cmd.run(self._args(
+                delta_cmd, ["delta", raw, ref,
+                            "--out", os.path.join(td, "target.txt")]))
+            self.assertIn("out", d)
+            rows = [l.split() for l in open(d["out"]).read().splitlines()
+                    if l.strip()]
+            parsed = [(int(f), float(v)) for f, v in rows]
+            self.assertEqual([f for f, _ in parsed],
+                             [r["freq"] for r in d["delta"]])
+            for (f, v), r in zip(parsed, d["delta"]):
+                self.assertAlmostEqual(v, r["db"], places=2)
+
     @staticmethod
     def _args(cmd, argv):
         parser = argparse.ArgumentParser()
