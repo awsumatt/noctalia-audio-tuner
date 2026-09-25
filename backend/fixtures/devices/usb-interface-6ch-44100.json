@@ -1,0 +1,35 @@
+{
+  "id": "simulated-usb-interface-6ch-44100",
+  "description": "Simulated USB audio interface sink, 6ch @ 44100Hz (different rate/channels)",
+  "pactl_sink": {
+    "index": 55,
+    "name": "alsa_output.usb-Focusrite_Scarlett_2i2-00.analog-surround-51",
+    "description": "Scarlett 2i2 Analog Surround 5.1",
+    "sample_specification": "float32le 6ch 44100Hz",
+    "monitor_source": "alsa_output.usb-Focusrite_Scarlett_2i2-00.analog-surround-51.monitor",
+    "properties": {
+      "api.alsa.pcm.card": "2",
+      "api.alsa.pcm.id": "HW:2,0",
+      "device.name": "alsa_output.usb-Focusrite_Scarlett_2i2-00",
+      "device.description": "Scarlett 2i2 Analog Surround 5.1"
+    },
+    "ports": [
+      {
+        "name": "analog-output-lineout",
+        "type": "Line",
+        "description": "Line Out",
+        "availability": "unknown"
+      }
+    ]
+  },
+  "pactl_source": {
+    "index": 56,
+    "name": "alsa_input.usb-Focusrite_Scarlett_2i2-00.analog-stereo",
+    "description": "Scarlett 2i2 Analog Stereo",
+    "monitor_of_sink": null,
+    "properties": {
+      "api.alsa.pcm.card": "2",
+      "api.alsa.pcm.id": "HW:2,0"
+    }
+  }
+}
