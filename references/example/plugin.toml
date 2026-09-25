@@ -1,0 +1,94 @@
+# Minimal reference plugin. Demonstrates the full bar-widget pipeline:
+# static manifest -> appears in the Add-widget picker -> renders/ticks ->
+# manifest-driven settings -> onIpc. Also ships a launcher provider that shows
+# launcher.setQuery() (type `/ex`).
+# See noctalia-docs plugins guide.
+
+id = "noctalia/example"
+name = "Example"
+version = "1.3.1"
+plugin_api = 9
+author = "noctalia"
+license = "MIT"
+dependencies = []
+tags = ["demo"]
+icon = "puzzle"
+description = "A reference plugin demonstrating every supported entry type and common runtime APIs."
+
+[[widget]]
+id = "hello"
+entry = "hello.luau"
+
+  [[widget.setting]]
+  key = "label"
+  type = "string"
+  label_key = "settings.label.label"
+  description_key = "settings.label.description"
+  default = "Hello"
+
+  [[widget.setting]]
+  key = "glyph"
+  type = "glyph"
+  label_key = "settings.glyph.label"
+  description_key = "settings.glyph.description"
+  default = "puzzle"
+
+  [[widget.setting]]
+  key = "show_glyph"
+  type = "bool"
+  label_key = "settings.show_glyph.label"
+  default = true
+
+# Second bar widget: the same service tick rendered declaratively via
+# barWidget.render() (ui.* tree) instead of imperative setText/setGlyph -
+# including an inline ui.button whose click stays separate from the
+# widget-level onClick.
+[[widget]]
+id = "declarative"
+entry = "declarative.luau"
+
+# Headless background service: publishes a counter to the plugin's shared state
+# every second. The widget above watches it (noctalia.state.watch) to show how a
+# service feeds the plugin's UI entries without sharing Lua memory.
+[[service]]
+id = "ticker"
+entry = "ticker.luau"
+
+# Control-center quick-toggle tile. Add it from Settings → Control Center shortcuts.
+[[shortcut]]
+id = "toggle"
+entry = "shortcut.luau"
+
+# Launcher provider: type `/ex` in the launcher. Selecting a category opens it via
+# launcher.setQuery() (prefix-relative, so the launcher stays in this provider);
+# leaf items copy to the clipboard and let the launcher close.
+[[launcher_provider]]
+id = "finder"
+entry = "finder.luau"
+prefix = "ex"
+glyph = "list-search"
+include_in_global_search = false
+
+# Panel: a settings-style surface built from the declarative ui.* vocabulary
+# (panel.render). Demonstrates the interactive controls (toggle/slider/input/
+# select inside a scroll) and their value callbacks. Panel size is host-owned
+# and declared here, so the surface is sized right on the first open.
+# Open it with: noctalia msg panel-toggle noctalia/example:panel
+[[panel]]
+id = "panel"
+entry = "panel.luau"
+width = 420
+height = 410
+placement = "floating"
+position = "center"
+
+# Second panel: the drag-and-drop reference (plugin_api 5) - sortable rows with
+# insertion zones, cross-column moves, a catch-all zone per column, and a
+# rejected-type target. Open it with: noctalia msg panel-toggle noctalia/example:dnd
+[[panel]]
+id = "dnd"
+entry = "dnd.luau"
+width = 560
+height = 460
+placement = "floating"
+position = "center"

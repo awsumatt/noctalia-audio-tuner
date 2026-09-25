@@ -1,0 +1,21 @@
+# NOTICE
+
+This project ports the measurement and tuning logic of **omarchy-audio-tuner**
+(MIT, © David Heinemeier Hansson; https://github.com/omacom/omarchy-audio-tuner)
+to a Noctalia Shell v5 plugin. The upstream checkout used was local
+(`~/Projects/omarchy-audio-tuner`); its pipeline
+semantics and documented traps are carried forward under the MIT license above.
+
+Vendored reference material under `references/`:
+
+- `references/noctalia.d.luau`, `references/example/` — from
+  https://github.com/noctalia-dev/official-plugins (MIT, © the Noctalia authors).
+  Type definitions and idioms only; upstream remains the source of truth.
+- `references/v5-plugin-knowledge/` — working copy of
+  https://github.com/dc-ja/noctalia-v5-plugin-development (a documentation
+  condensation of https://docs.noctalia.dev/noctalia/). Kept for development
+  convenience; its license was not verified at vendoring time, so do not
+  redistribute it without checking.
+
+The Noctalia plugin system and its APIs belong to the Noctalia project
+(https://github.com/noctalia-dev/noctalia, MIT).
