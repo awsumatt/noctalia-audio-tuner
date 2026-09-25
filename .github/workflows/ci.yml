@@ -27,12 +27,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/ruff-action@v3
+      - uses: actions/setup-python@v5
         with:
-          # Scoped to the SA4 slice: SA1/SA2 files are owned by other branches
-          # and were not linted there; scoping avoids failing this repo's CI on
-          # files this slice must not modify (see AGENTS.md subagent rules).
-          args: check backend/tunerlib/ab.py backend/tunerlib/commands/ab_start.py backend/tunerlib/commands/ab_switch.py backend/tunerlib/commands/ab_stop.py backend/tunerlib/commands/apply.py backend/tunerlib/commands/_common.py backend/tests/test_ab.py
+          python-version: "3.12"
+      # Scoped to the SA4 slice: SA1/SA2 files are owned by other branches
+      # and were not linted there; scoping avoids failing this repo's CI on
+      # files this slice must not modify (see AGENTS.md subagent rules).
+      - run: |
+          python -m pip install ruff
+          ruff check backend/tunerlib/ab.py backend/tunerlib/commands/ab_start.py backend/tunerlib/commands/ab_switch.py backend/tunerlib/commands/ab_stop.py backend/tunerlib/commands/apply.py backend/tunerlib/commands/_common.py backend/tests/test_ab.py
 
   shellcheck:
     name: shellcheck (CI-only linter)
