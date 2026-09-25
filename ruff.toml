@@ -1,0 +1,18 @@
+# Repo-wide ruff configuration (CI + local).
+# Deliberately pragmatic: this is a stdlib-only backend ported from bash;
+# pedantic nursery/bugbear-adjacent rules (BLE, DTZ, PLW, SIM, RUF, S) are
+# off so SA1/SA2/SA4 files lint under one config.
+line-length = 100
+target-version = "py310"
+
+[lint]
+select = ["E", "F", "W", "I", "B"]
+ignore = [
+  "E501", # long lines allowed in docstrings/comments-heavy code
+]
+
+[lint.per-file-ignores]
+"backend/tests/*" = ["B011"] # assert usage is the point of tests
+
+[format]
+quote-style = "double"
