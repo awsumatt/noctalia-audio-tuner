@@ -78,7 +78,7 @@ The UI layer contains no DSP logic; the backend contains no UI. Communication: `
 ### Export targets (generate)
 
 1. **PipeWire filter-chain** (primary, generalized from `gen-filter-chain.py` — placeholder sink substitution, limiter at the end),
-2. **Omarchy tuning tree** when Omarchy is detected (`tunings/<vendor>-<model>/filter-chain.conf` + `tuning.conf` with the four report fields),
+2. **Omarchy tuning tree** when Omarchy is detected (`tunings/<vendor>-<model>/filter-chain.conf` + `tuning.conf` with the four report fields). CAUTION: a fit alone supplies only `magnitude_rms_db` and `bass_group_delay_swing_ms`; `limiter_headroom_db` (needs a hot master + volumedetect) and `dynamic_range_delta_lu` (needs reference LRA) are post-installation measurements. The exporter must emit those two as explicit `not_measured` markers — or refuse to write `tuning.conf` at all — never fabricated values.
 3. **EasyEffects preset** (importable),
 4. CamillaDSP: out of scope for v1; record as future work.
 
@@ -90,7 +90,7 @@ The UI layer contains no DSP logic; the backend contains no UI. Communication: `
 - Launcher: `prefix = "tune"`, `debounce_ms` set (subprocess-backed), `setResults(query, results)` must **echo** the query text; publish a placeholder synchronously then update from the async callback.
 - Settings: typed `[[widget.setting]]` / root `[[setting]]`; labels are **translation keys** (`label_key`) → `translations/en.json` is mandatory from day one; only declared keys resolve (`getConfig` warns + nil otherwise).
 - Persistence: `noctalia.pluginDataDir()` only — never `pluginDir()` (rewritten on update). Store per-device measurement artifacts + fit results there.
-- Open a panel: `noctalia msg panel-toggle awsumatt/noctalia-audio-tuner:tuner`.
+CAVEAT for review: the vendored `references/noctalia.d.luau` is from the upstream tip (level 32) and annotates individual members with `API n` markers above 9 (`getSetting` 26, `readFileAsync` 23, argv-table exec 24, `getColor` 31, …). Before any merge, diff EVERY `noctalia.*`/`ui.*`/`barWidget.*`/`panel.*`/`launcher.*` call the plugin makes against those per-member annotations: anything above 9 must be dropped, or `plugin_api` raised with a written reason. The `plugin_api = 9` claim is a hypothesis until that diff passes.
 - Copy `references/noctalia.d.luau` into `plugin/` for luau-lsp diagnostics (type-only, no runtime effect) and keep it **gitignored** in `plugin/` (it is vendored under `references/` instead; `scripts/fetch-noctalia.d.luau.sh` refreshes it).
 - Workflow per vendored `references/v5-plugin-knowledge/references/workflow.md`: path source in `[plugins]` or `~/.local/share/noctalia/plugins/<name>/`, enable once, hot-reload on edit.
 
